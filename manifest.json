@@ -1,0 +1,27 @@
+{
+  "name": "Ilha da Magia",
+  "short_name": "Ilha da Magia",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f9fa",
+  "theme_color": "#073447",
+  "description": "Ilha da Magia — Descubrí, viví y aprovechá la isla.",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
