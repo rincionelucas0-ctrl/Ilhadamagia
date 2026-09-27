@@ -587,8 +587,8 @@ async function submitPost(){
    }
    if(plan==='Premium')await savePremiumMission(savedId);
    else {const r=await sb.from('missions').delete().eq('commercial_publication_id',savedId);if(r.error)throw r.error}
-   if(!wasEdit){const r=await sb.rpc('submit_commercial_publication',{p_publication_id:savedId});if(r.error)throw r.error;toast('Publicación enviada a revisión')}
-   else if(previousReviewState==='rejected'){const r=await sb.rpc('submit_commercial_publication',{p_publication_id:savedId});if(r.error)throw r.error;toast('Cambios enviados a revisión')}
+   if(!wasEdit){const r=await sb.rpc('submit_commercial_publication',{p_publication_id:savedId});if(r.error)throw r.error;const check=await sb.from('commercial_publication_states').select('publication_state,review_state').eq('publication_id',savedId).maybeSingle();if(check.error)throw check.error;if(check.data?.review_state!=='submitted')throw new Error('La publicación se guardó, pero no quedó enviada a revisión');toast('Publicación enviada a revisión')}
+   else if(previousReviewState==='rejected'){const r=await sb.rpc('submit_commercial_publication',{p_publication_id:savedId});if(r.error)throw r.error;const check=await sb.from('commercial_publication_states').select('publication_state,review_state').eq('publication_id',savedId).maybeSingle();if(check.error)throw check.error;if(check.data?.review_state!=='submitted')throw new Error('Los cambios se guardaron, pero no quedaron enviados a revisión');toast('Cambios enviados a revisión')}
    else toast('Cambios guardados');
    editId=null;window.__editReviewState=null;closeOverlay('formOverlay');await showMyPosts();await loadAll();await renderProfile();
  }catch(e){console.error('submitPost',e);toast(e?.message?`No se pudo guardar: ${e.message}`:'No se pudo guardar la publicación')}
