@@ -1,0 +1,19 @@
+{
+  "name": "Ilha da Magia",
+  "short_name": "Ilha da Magia",
+  "id": "./index.html",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f9fa",
+  "theme_color": "#073447",
+  "description": "Ilha da Magia — Descubrí, viví y aprovechá la isla.",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "1536x1536",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

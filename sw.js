@@ -1,4 +1,4 @@
-const CACHE = 'ilha-da-magia-v7';
+const CACHE = 'ilha-da-magia-v8';
 
 // Solo recursos locales de la aplicación. Nunca guardar respuestas de Supabase/Auth
 // ni URLs firmadas, porque pueden contener datos privados o quedar obsoletas.
