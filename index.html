@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Ilha da Magia</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -111,7 +115,7 @@ main{max-width:980px;margin:auto;padding:16px 16px 94px}.view{display:none}.view
 </section>
 <section id="profile" class="view">
   <div class="section-head"><div><h2>Perfil</h2><p id="profileSubtitle" class="section-sub">Tu experiencia en Ilha da Magia</p></div><button id="profileAuth" class="primary">Iniciar sesión</button></div>
-  <div id="profileGuest" class="empty"><strong>Iniciá sesión para ver tu perfil</strong><span>Con tu cuenta podés guardar lugares, participar en misiones, sumar puntos y administrar tu experiencia.</span><button id="profileLogin" class="primary">Continuar con Google</button></div>
+  <div id="profileGuest" class="empty"><strong>Iniciá sesión para ver tu perfil</strong><span>Con tu cuenta podés guardar lugares, participar en misiones, sumar puntos y administrar tu experiencia.</span><div class="profile-actions" style="justify-content:center"><button id="profileLogin" class="primary">Continuar con Google</button><button id="profileInstallApp">Instalar aplicación</button></div><div id="profileInstallStatus" class="status">Si tu navegador permite instalarla, aparecerá la opción aquí.</div></div>
   <div id="profileContent" hidden>
     <div class="profile-card profile-identity"><img id="profileAvatar" class="profile-avatar" alt=""><div><h3 id="profileName">—</h3><p id="profileEmail" class="section-sub">—</p><span id="profileAccountStatus" class="chip">Cuenta activa</span></div><button id="profileLogout">Cerrar sesión</button></div>
     <div class="grid profile-grid">
@@ -130,7 +134,7 @@ main{max-width:980px;margin:auto;padding:16px 16px 94px}.view{display:none}.view
         <label>Proximidad<select id="profileProximityMode"><option value="passive">Pasiva</option><option value="active">Activa</option></select></label>
       </div>
       <div id="profileNotificationList" class="profile-notifications"><div class="status">Cargando…</div></div>
-      <div class="profile-actions"><button id="profileSavePreferences" class="primary">Guardar preferencias</button><button id="profileUseLocation">Usar mi ubicación</button></div>
+      <div class="profile-actions"><button id="profileSavePreferences" class="primary">Guardar preferencias</button><button id="profileUseLocation">Usar mi ubicación</button><button id="profileEnablePush">Activar notificaciones en este dispositivo</button><button id="profileInstallAppLogged">Instalar aplicación</button></div><div id="profilePushStatus" class="status">Las notificaciones del dispositivo son opcionales.</div><div id="profileInstallStatusLogged" class="status">La instalación depende del navegador y del dispositivo.</div>
     </div>
     <div class="profile-panel"><div class="section-head"><div><h3>Área comercial</h3><p class="section-sub">Una misma cuenta puede administrar varios espacios comerciales.</p></div></div><div id="profileCommercialList" class="grid"><div class="status">Cargando…</div></div></div>
     <div class="profile-panel"><div class="section-head"><div><h3>Notificaciones</h3><p class="section-sub">Tus avisos recibidos aparecen acá.</p></div><button id="profileNotificationsRefresh">Actualizar</button></div><div id="profileNotifications" class="profile-notifications"><div class="status">Cargando…</div></div></div>
@@ -357,7 +361,7 @@ function openProposal(){if(!state.user){toast('Iniciá sesión para proponer un 
 function closeProposal(){['proposalName','proposalDescription','proposalMaps'].forEach(id=>{const e=$('#'+id);if(e)e.value=''});$('#proposalZone').value='';$('#proposalBackdrop').classList.remove('open');$('#proposalBackdrop').setAttribute('aria-hidden','true')}
 async function submitProposal(){if(!state.user){toast('Iniciá sesión para proponer un lugar.');return}const name=$('#proposalName').value.trim(),description=$('#proposalDescription').value.trim(),mapsUrl=$('#proposalMaps').value.trim(),zoneId=$('#proposalZone').value||null;if(!name){toast('Indicá el nombre del lugar.');return}const btn=$('#proposalSend');btn.disabled=true;try{const {error}=await supabase.from('place_proposals').insert({proposed_by:state.user.id,name,description:description||null,zone_id:zoneId,status:'review'});if(error)throw error;toast('Propuesta enviada a revisión.');closeProposal()}catch(e){console.error(e);toast('No se pudo enviar la propuesta.')}finally{btn.disabled=false}}
 $('#communityRefresh').onclick=()=>{state.community.loaded=true;loadCommunity().catch(e=>{console.error(e);toast('No pudimos actualizar Comunidad.')})};$('#communityPublish').onclick=publishCommunityPost;$('#communityRelationType').onchange=updateCommunityRelationOptions;$('#communityPropose').onclick=openProposal;$('#proposalClose').onclick=closeProposal;$('#proposalCancel').onclick=closeProposal;$('#proposalSend').onclick=submitProposal;$('#proposalBackdrop').onclick=e=>{if(e.target.id==='proposalBackdrop')closeProposal()};
-async function loginWithGoogle(){try{const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.href}});if(error)throw error}catch(e){console.error(e);toast('No se pudo iniciar sesión con Google.')}}
+async function loginWithGoogle(){if(!supabase){toast('La conexión con Supabase no está disponible.');return}try{const redirectTo=window.location.origin+window.location.pathname;const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo}});if(error)throw error}catch(e){console.error('Google login:',e);toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.')}}
 function renderProfileGuest(){if($('#profileGuest'))$('#profileGuest').hidden=!!state.user;if($('#profileContent'))$('#profileContent').hidden=!state.user;if($('#profileAuth'))$('#profileAuth').textContent=state.user?'Cuenta':'Iniciar sesión'}
 function profileEmpty(title,text){return `<div class="empty"><strong>${esc(title)}</strong><span>${esc(text)}</span></div>`}
 async function loadProfile(){if(!state.user){renderProfileGuest();return}renderProfileGuest();const uid=state.user.id;try{
@@ -395,6 +399,68 @@ $('#profileLogin').onclick=loginWithGoogle;$('#profileAuth').onclick=()=>state.u
 async function initSession(){if(!supabase){state.user=null;renderProfileGuest();return}const {data:{user}}=await supabase.auth.getUser();state.user=user||null;$('#authBtn').textContent=user?'●':'◯';$('#communityAuthHint').textContent=user?'Publicás con tu cuenta de Google.':'Iniciá sesión para publicar, comentar, guardar y reportar.';renderProfileGuest();if(user){const {data:p}=await supabase.from('profiles').select('language,display_name').eq('id',user.id).maybeSingle();if(p?.language)state.language=p.language;const {data:pref}=await supabase.from('user_preferences').select('location_mode,proximity_mode').eq('user_id',user.id).maybeSingle();if(pref?.location_mode==='granted')$('#nearbySubtitle').textContent='Podés actualizar tu ubicación cuando quieras.';$('#profileSubtitle').textContent=`Hola, ${p?.display_name||user.user_metadata?.full_name||'usuario'}.`;await loadProfile()}else{renderProfileGuest()}}
 if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=session?.user||null;$('#authBtn').textContent=state.user?'●':'◯';$('#communityAuthHint').textContent=state.user?'Publicás con tu cuenta de Google.':'Iniciá sesión para publicar, comentar, guardar y reportar.';renderProfileGuest();if(state.user){loadProfile().catch(e=>console.error(e))}})}
 (async()=>{try{await initSession();if(supabase)await loadHome();else{renderAll();toast('La navegación está disponible. La conexión de datos se reintentará al cargar nuevamente.')}}catch(e){console.error(e);renderAll();toast('La app no pudo cargar los datos ahora, pero la navegación sigue disponible.')}})();
+</script>
+
+
+<script>
+(function(){
+  let deferredPrompt=null;
+  const installButtons=()=>[document.querySelector('#profileInstallApp'),document.querySelector('#profileInstallAppLogged')].filter(Boolean);
+  const statusEls=()=>[document.querySelector('#profileInstallStatus'),document.querySelector('#profileInstallStatusLogged')].filter(Boolean);
+  function setInstallText(t){statusEls().forEach(e=>e.textContent=t)}
+  function isStandalone(){return window.matchMedia?.('(display-mode: standalone)').matches||window.navigator.standalone===true}
+  function updateInstallUi(){
+    if(isStandalone()){installButtons().forEach(b=>b.hidden=true);setInstallText('A aplicação já está instalada neste dispositivo.');return}
+    installButtons().forEach(b=>b.hidden=false);
+    if(deferredPrompt)setInstallText('La aplicación está lista para instalarse en este dispositivo.');
+  }
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;updateInstallUi()});
+  window.addEventListener('appinstalled',()=>{deferredPrompt=null;updateInstallUi();setInstallText('Aplicación instalada correctamente.')});
+  async function installApp(){
+    if(isStandalone()){toast('La aplicación ya está instalada.');return}
+    if(!deferredPrompt){setInstallText('Si no aparece la instalación automática, abrí el menú del navegador y elegí “Instalar aplicación” o “Agregar a pantalla de inicio”.');toast('Usá el menú del navegador para instalar la app.');return}
+    deferredPrompt.prompt();
+    const choice=await deferredPrompt.userChoice.catch(()=>null);
+    deferredPrompt=null;
+    if(choice?.outcome==='accepted')toast('Instalación iniciada.');
+    updateInstallUi();
+  }
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelector('#profileInstallApp')?.addEventListener('click',installApp);
+    document.querySelector('#profileInstallAppLogged')?.addEventListener('click',installApp);
+    updateInstallUi();
+  });
+})();
+</script>
+<script>
+(function(){
+  const VAPID_PUBLIC_KEY='BND3HHxe5awG0G2Y0tsT6-wd7OZJcn69ZDyolW3U2JIJldyuLVKQVtEpIaJIh9tk0-_0XsIQ5b9Tl_s5YCiMFJ4';
+  function urlBase64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(base64);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));}
+  async function registerPwa(){if(!('serviceWorker' in navigator))return null;try{return await navigator.serviceWorker.register('/sw.js',{scope:'/'})}catch(e){console.error('PWA:',e);return null}}
+  async function enablePush(){
+    if(!state.user){toast('Iniciá sesión para activar las notificaciones.');return}
+    if(!('Notification' in window)||!('PushManager' in window)){toast('Este navegador no admite notificaciones push.');return}
+    const status=document.querySelector('#profilePushStatus');const btn=document.querySelector('#profileEnablePush');
+    if(!status||!btn){toast('No se encontró el control de notificaciones.');return}
+    try{
+      btn.disabled=true;
+      if(Notification.permission==='denied'){status.textContent='Las notificaciones están bloqueadas en el navegador. Habilitalas desde los permisos del sitio.';return}
+      const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
+      if(permission!=='granted'){status.textContent='No se activaron las notificaciones.';return}
+      const reg=await registerPwa(); if(!reg)throw new Error('Service Worker no disponible');
+      let sub=await reg.pushManager.getSubscription();
+      if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+      const json=sub.toJSON();
+      const payload={user_id:state.user.id,endpoint:json.endpoint,p256dh:json.keys?.p256dh||'',auth:json.keys?.auth||'',expiration_time:json.expirationTime?new Date(json.expirationTime).toISOString():null,user_agent:navigator.userAgent,updated_at:new Date().toISOString()};
+      const {error}=await supabase.from('push_subscriptions').upsert(payload,{onConflict:'user_id,endpoint'});
+      if(error)throw error;
+      status.textContent='Notificaciones activadas en este dispositivo.';toast('Notificaciones activadas.');
+    }catch(e){console.error('Push:',e);status.textContent='No se pudieron activar las notificaciones ahora.';toast('No se pudieron activar las notificaciones.')}finally{btn.disabled=false}
+  }
+  window.__ilhaRegisterPwa=registerPwa;
+  window.__ilhaEnablePush=enablePush;
+  document.addEventListener('DOMContentLoaded',()=>{registerPwa();const b=document.querySelector('#profileEnablePush');if(b)b.addEventListener('click',enablePush)});
+})();
 </script>
 </body>
 </html>
