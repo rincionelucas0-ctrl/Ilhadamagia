@@ -469,13 +469,26 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
 <script>
 (function(){
   let deferredPrompt=null;
-  let waitingForPrompt=[];
   let installBusy=false;
+  const PROD_URL='https://oficialilha-3.vercel.app/';
   const isStandalone=()=>window.matchMedia?.('(display-mode: standalone)').matches||window.navigator.standalone===true;
   const installButtons=()=>[document.querySelector('#profileInstallApp'),document.querySelector('#profileInstallAppLogged')].filter(Boolean);
-  const statusEls=()=>[document.querySelector('#profileInstallStatus'),document.querySelector('#profileInstallStatusLogged')].filter(Boolean);
+  const statusEls=()=>[document.querySelector('#profileInstallStatus'),document.querySelector('#profileInstallStatusLogged'),document.querySelector('#installWelcomeStatus')].filter(Boolean);
   const setInstallText=t=>statusEls().forEach(e=>e.textContent=t);
-  const resolvePromptWaiters=p=>{const q=waitingForPrompt.splice(0);q.forEach(fn=>fn(p))};
+
+  function showWelcomeInstall(){
+    if(isStandalone())return;
+    const modal=document.querySelector('#installWelcome');
+    if(!modal)return;
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden','false');
+  }
+  function closeWelcomeInstall(){
+    const modal=document.querySelector('#installWelcome');
+    if(!modal)return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden','true');
+  }
   function updateInstallUi(){
     if(isStandalone()){
       installButtons().forEach(b=>b.hidden=true);
@@ -483,102 +496,122 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
       return;
     }
     installButtons().forEach(b=>b.hidden=false);
-    if(deferredPrompt)setInstallText('La aplicación está lista para instalarse.');
-    else setInstallText('Tocá “Instalar aplicación” para iniciar la instalación cuando el navegador la habilite.');
+    setInstallText(deferredPrompt?'La aplicación está lista para instalarse.':'Tocá “Instalar aplicación” para iniciar la instalación.');
   }
-  function waitForInstallPrompt(timeout=3500){
-    if(deferredPrompt)return Promise.resolve(deferredPrompt);
-    return new Promise(resolve=>{
-      waitingForPrompt.push(resolve);
-      setTimeout(()=>{
-        const i=waitingForPrompt.indexOf(resolve);
-        if(i!==-1){waitingForPrompt.splice(i,1);resolve(null)}
-      },timeout);
-    });
-  }
-  async function registerServiceWorker(){
-    if(!('serviceWorker' in navigator))return null;
-    try{return await navigator.serviceWorker.register('/sw.js',{scope:'/'})}
-    catch(e){console.error('PWA install:',e);return null}
-  }
-  window.addEventListener('beforeinstallprompt',e=>{
+
+  window.addEventListener('beforeinstallprompt',function(e){
     e.preventDefault();
     deferredPrompt=e;
     updateInstallUi();
-    resolvePromptWaiters(e);
-    showWelcomeInstall(true);
   });
-  window.addEventListener('appinstalled',()=>{
+
+  window.addEventListener('appinstalled',function(){
     deferredPrompt=null;
     updateInstallUi();
     setInstallText('Aplicación instalada correctamente.');
     closeWelcomeInstall();
-    toast('Ilha da Magia quedó instalada.');
+    if(typeof toast==='function')toast('Ilha da Magia quedó instalada.');
   });
+
   async function installApp(){
     if(installBusy)return;
-    if(isStandalone()){toast('La aplicación ya está instalada.');return}
+    if(isStandalone()){
+      if(typeof toast==='function')toast('La aplicación ya está instalada.');
+      return;
+    }
     installBusy=true;
     try{
-      if(!deferredPrompt){
-        setInstallText('Preparando la instalación…');
-        await registerServiceWorker();
-        await waitForInstallPrompt();
-      }
-      if(!deferredPrompt){
-        setInstallText('Este navegador no habilitó la instalación automática. Abrí el menú de Chrome y elegí “Instalar aplicación” o “Agregar a pantalla de inicio”.');
-        toast('Chrome todavía no habilitó la instalación automática en este dispositivo.');
+      if(deferredPrompt){
+        const promptEvent=deferredPrompt;
+        deferredPrompt=null;
+        await promptEvent.prompt();
+        const choice=await promptEvent.userChoice;
+        if(choice?.outcome==='accepted'){
+          setInstallText('Instalación iniciada.');
+        }else{
+          setInstallText('La instalación quedó pendiente.');
+        }
+        updateInstallUi();
         return;
       }
-      const promptEvent=deferredPrompt;
-      deferredPrompt=null;
-      promptEvent.prompt();
-      const choice=await promptEvent.userChoice;
-      if(choice?.outcome==='accepted')toast('Instalación iniciada.');
-      else toast('La instalación quedó pendiente.');
-      updateInstallUi();
-    }catch(e){console.error('Install:',e);setInstallText('No se pudo abrir la instalación. Intentá nuevamente.');toast('No se pudo abrir la instalación ahora.');}
-    finally{installBusy=false}
+
+      setInstallText('Tu navegador todavía no habilitó el instalador automático.');
+      if(typeof toast==='function')toast('Abrí el menú del navegador y elegí “Instalar aplicación” o “Agregar a pantalla de inicio”.');
+    }catch(e){
+      console.error('PWA install:',e);
+      setInstallText('No se pudo abrir la instalación.');
+      if(typeof toast==='function')toast('No se pudo abrir la instalación ahora.');
+    }finally{
+      installBusy=false;
+    }
   }
-  function showWelcomeInstall(force){
-    if(isStandalone())return;
-    const modal=document.querySelector('#installWelcome');if(!modal)return;
-    if(!force&&sessionStorage.getItem('ilha_install_notice_seen')==='1')return;
-    modal.classList.add('open');modal.setAttribute('aria-hidden','false');
+
+  async function loginWithGoogleFixed(){
+    if(window.__googleLoginBusy)return;
+    window.__googleLoginBusy=true;
+    try{
+      const client=(typeof supabase!=='undefined'&&supabase)?supabase:null;
+      if(!client)throw new Error('Supabase todavía no está disponible.');
+      const {error}=await client.auth.signInWithOAuth({
+        provider:'google',
+        options:{
+          redirectTo:PROD_URL,
+          queryParams:{prompt:'select_account'}
+        }
+      });
+      if(error)throw error;
+    }catch(e){
+      console.error('Google login:',e);
+      if(typeof toast==='function')toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.');
+    }finally{
+      window.__googleLoginBusy=false;
+    }
   }
-  function closeWelcomeInstall(){
-    const modal=document.querySelector('#installWelcome');if(!modal)return;
-    modal.classList.remove('open');modal.setAttribute('aria-hidden','true');
-    try{sessionStorage.setItem('ilha_install_notice_seen','1')}catch(_){}
-  }
+
   function bindCriticalButtons(){
     const profileLogin=document.querySelector('#profileLogin');
     const profileAuth=document.querySelector('#profileAuth');
     const authBtn=document.querySelector('#authBtn');
     const guestInstall=document.querySelector('#profileInstallApp');
     const loggedInstall=document.querySelector('#profileInstallAppLogged');
-    if(profileLogin)profileLogin.onclick=loginWithGoogle;
-    if(profileAuth)profileAuth.onclick=()=>state.user?setView('profile'):loginWithGoogle();
-    if(authBtn)authBtn.onclick=()=>state.user?setView('profile'):loginWithGoogle();
-    if(guestInstall)guestInstall.onclick=installApp;
-    if(loggedInstall)loggedInstall.onclick=installApp;
     const welcomeButton=document.querySelector('#installWelcomeButton');
     const welcomeClose=document.querySelector('#installWelcomeClose');
     const welcomeContinue=document.querySelector('#installWelcomeContinue');
     const welcomeModal=document.querySelector('#installWelcome');
-    if(welcomeButton)welcomeButton.onclick=installApp;
-    if(welcomeClose)welcomeClose.onclick=closeWelcomeInstall;
-    if(welcomeContinue)welcomeContinue.onclick=closeWelcomeInstall;
-    if(welcomeModal)welcomeModal.onclick=e=>{if(e.target===welcomeModal)closeWelcomeInstall()};
+
+    if(profileLogin)profileLogin.onclick=function(e){e.preventDefault();loginWithGoogleFixed();};
+    if(profileAuth)profileAuth.onclick=function(e){e.preventDefault();if(state.user)setView('profile');else loginWithGoogleFixed();};
+    if(authBtn)authBtn.onclick=function(e){e.preventDefault();if(state.user)setView('profile');else loginWithGoogleFixed();};
+    if(guestInstall)guestInstall.onclick=function(e){e.preventDefault();installApp();};
+    if(loggedInstall)loggedInstall.onclick=function(e){e.preventDefault();installApp();};
+    if(welcomeButton)welcomeButton.onclick=function(e){e.preventDefault();installApp();};
+    if(welcomeClose)welcomeClose.onclick=function(e){e.preventDefault();closeWelcomeInstall();};
+    if(welcomeContinue)welcomeContinue.onclick=function(e){e.preventDefault();closeWelcomeInstall();};
+    if(welcomeModal)welcomeModal.onclick=function(e){if(e.target===welcomeModal)closeWelcomeInstall();};
   }
-  document.addEventListener('DOMContentLoaded',async()=>{
-    bindCriticalButtons();
-    await registerServiceWorker();
-    updateInstallUi();
-    setTimeout(()=>showWelcomeInstall(false),450);
-  });
+
+  document.addEventListener('click',function(e){
+    const login=e.target.closest?.('#profileLogin,#profileAuth,#authBtn');
+    if(login){e.preventDefault();if(login.id==='profileAuth'&&state.user){setView('profile');}else if(login.id==='authBtn'&&state.user){setView('profile');}else{loginWithGoogleFixed();}return;}
+    const install=e.target.closest?.('#profileInstallApp,#profileInstallAppLogged,#installWelcomeButton');
+    if(install){e.preventDefault();installApp();return;}
+  },true);
+
   window.__ilhaInstallApp=installApp;
   window.__ilhaCloseInstall=closeWelcomeInstall;
+  window.__ilhaLoginGoogle=loginWithGoogleFixed;
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){
+      bindCriticalButtons();
+      updateInstallUi();
+      setTimeout(showWelcomeInstall,350);
+    },{once:true});
+  }else{
+    bindCriticalButtons();
+    updateInstallUi();
+    setTimeout(showWelcomeInstall,350);
+  }
 })();
 </script>
 <script>
