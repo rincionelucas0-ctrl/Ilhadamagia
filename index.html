@@ -517,6 +517,16 @@ function populateLocationSelectors(){}
 function populateDistricts(){}
 function populateZones(){}
 
+function normalizeBrazilPhone(v){
+ let s=String(v||'').trim();
+ if(!s)return null;
+ let digits=s.replace(/\D/g,'');
+ if(!digits)return null;
+ if(digits.startsWith('00'))digits=digits.slice(2);
+ if(!digits.startsWith('55') && (digits.length===10 || digits.length===11))digits='55'+digits;
+ if(!/^\d{10,15}$/.test(digits))return null;
+ return '+'+digits;
+}
 function normalizeInstagram(v){let s=String(v||'').trim();if(!s)return null;if(s.startsWith('@'))s=s.slice(1);if(/^instagram\.com\//i.test(s))s='https://'+s;if(!/^https?:\/\//i.test(s))s='https://instagram.com/'+s;return s}
 function normalizeWebsite(v){let s=String(v||'').trim();if(!s)return null;if(!/^https?:\/\//i.test(s))s='https://'+s;return s}
 function locationLabel(){if(userLat!=null&&userLng!=null)return 'Ubicación activada · viendo primero lo más cercano';return 'Activá tu ubicación para descubrir lo que está cerca.'}
