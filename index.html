@@ -411,7 +411,21 @@ function openProposal(){if(!state.user){toast('Iniciá sesión para proponer un 
 function closeProposal(){['proposalName','proposalDescription','proposalMaps'].forEach(id=>{const e=$('#'+id);if(e)e.value=''});$('#proposalZone').value='';$('#proposalBackdrop').classList.remove('open');$('#proposalBackdrop').setAttribute('aria-hidden','true')}
 async function submitProposal(){if(!state.user){toast('Iniciá sesión para proponer un lugar.');return}const name=$('#proposalName').value.trim(),description=$('#proposalDescription').value.trim(),mapsUrl=$('#proposalMaps').value.trim(),zoneId=$('#proposalZone').value||null;if(!name){toast('Indicá el nombre del lugar.');return}const btn=$('#proposalSend');btn.disabled=true;try{const {error}=await supabase.from('place_proposals').insert({proposed_by:state.user.id,name,description:description||null,zone_id:zoneId,status:'review'});if(error)throw error;toast('Propuesta enviada a revisión.');closeProposal()}catch(e){console.error(e);toast('No se pudo enviar la propuesta.')}finally{btn.disabled=false}}
 $('#communityRefresh').onclick=()=>{state.community.loaded=true;loadCommunity().catch(e=>{console.error(e);toast('No pudimos actualizar Comunidad.')})};$('#communityPublish').onclick=publishCommunityPost;$('#communityRelationType').onchange=updateCommunityRelationOptions;$('#communityPropose').onclick=openProposal;$('#proposalClose').onclick=closeProposal;$('#proposalCancel').onclick=closeProposal;$('#proposalSend').onclick=submitProposal;$('#proposalBackdrop').onclick=e=>{if(e.target.id==='proposalBackdrop')closeProposal()};
-async function loginWithGoogle(){try{const client=supabase||(window.supabase?.createClient?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null);if(!client){toast('No se pudo cargar el inicio de sesión. Recargá la página e intentá nuevamente.');return}const redirectTo='https://oficialilha-3.vercel.app/';const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo,queryParams:{prompt:'select_account'}}});if(error)throw error}catch(e){console.error('Google login:',e);toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.')}}
+let googleLoginBusy=false;
+async function loginWithGoogle(){
+  if(googleLoginBusy)return;
+  googleLoginBusy=true;
+  try{
+    const client=supabase||(window.supabase?.createClient?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null);
+    if(!client){toast('No se pudo cargar el inicio de sesión. Recargá la página e intentá nuevamente.');return}
+    const redirectTo=new URL('/',window.location.origin).toString();
+    const {data,error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo,queryParams:{prompt:'select_account'},skipBrowserRedirect:true}});
+    if(error)throw error;
+    if(data?.url)window.location.assign(data.url);
+    else throw new Error('Google no devolvió la URL de inicio de sesión.');
+  }catch(e){console.error('Google login:',e);toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.');}
+  finally{googleLoginBusy=false}
+}
 function renderProfileGuest(){if($('#profileGuest'))$('#profileGuest').hidden=!!state.user;if($('#profileContent'))$('#profileContent').hidden=!state.user;if($('#profileAuth'))$('#profileAuth').textContent=state.user?'Cuenta':'Iniciar sesión'}
 function profileEmpty(title,text){return `<div class="empty"><strong>${esc(title)}</strong><span>${esc(text)}</span></div>`}
 async function loadProfile(){if(!state.user){renderProfileGuest();return}renderProfileGuest();const uid=state.user.id;try{
@@ -455,11 +469,13 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
 <script>
 (function(){
   let deferredPrompt=null;
-  const PROD_URL='https://oficialilha-3.vercel.app/';
+  let waitingForPrompt=[];
+  let installBusy=false;
   const isStandalone=()=>window.matchMedia?.('(display-mode: standalone)').matches||window.navigator.standalone===true;
   const installButtons=()=>[document.querySelector('#profileInstallApp'),document.querySelector('#profileInstallAppLogged')].filter(Boolean);
   const statusEls=()=>[document.querySelector('#profileInstallStatus'),document.querySelector('#profileInstallStatusLogged')].filter(Boolean);
   const setInstallText=t=>statusEls().forEach(e=>e.textContent=t);
+  const resolvePromptWaiters=p=>{const q=waitingForPrompt.splice(0);q.forEach(fn=>fn(p))};
   function updateInstallUi(){
     if(isStandalone()){
       installButtons().forEach(b=>b.hidden=true);
@@ -468,20 +484,61 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
     }
     installButtons().forEach(b=>b.hidden=false);
     if(deferredPrompt)setInstallText('La aplicación está lista para instalarse.');
+    else setInstallText('Tocá “Instalar aplicación” para iniciar la instalación cuando el navegador la habilite.');
   }
-  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;updateInstallUi();showWelcomeInstall(true)});
-  window.addEventListener('appinstalled',()=>{deferredPrompt=null;updateInstallUi();setInstallText('Aplicación instalada correctamente.');closeWelcomeInstall();toast('Ilha da Magia quedó instalada.');});
+  function waitForInstallPrompt(timeout=3500){
+    if(deferredPrompt)return Promise.resolve(deferredPrompt);
+    return new Promise(resolve=>{
+      waitingForPrompt.push(resolve);
+      setTimeout(()=>{
+        const i=waitingForPrompt.indexOf(resolve);
+        if(i!==-1){waitingForPrompt.splice(i,1);resolve(null)}
+      },timeout);
+    });
+  }
+  async function registerServiceWorker(){
+    if(!('serviceWorker' in navigator))return null;
+    try{return await navigator.serviceWorker.register('/sw.js',{scope:'/'})}
+    catch(e){console.error('PWA install:',e);return null}
+  }
+  window.addEventListener('beforeinstallprompt',e=>{
+    e.preventDefault();
+    deferredPrompt=e;
+    updateInstallUi();
+    resolvePromptWaiters(e);
+    showWelcomeInstall(true);
+  });
+  window.addEventListener('appinstalled',()=>{
+    deferredPrompt=null;
+    updateInstallUi();
+    setInstallText('Aplicación instalada correctamente.');
+    closeWelcomeInstall();
+    toast('Ilha da Magia quedó instalada.');
+  });
   async function installApp(){
+    if(installBusy)return;
     if(isStandalone()){toast('La aplicación ya está instalada.');return}
-    if(!deferredPrompt){setInstallText('Usá el menú de Chrome y elegí “Instalar aplicación” o “Agregar a pantalla de inicio”.');toast('La instalación se hace desde el menú del navegador en este dispositivo.');return}
+    installBusy=true;
     try{
-      deferredPrompt.prompt();
-      const choice=await deferredPrompt.userChoice;
+      if(!deferredPrompt){
+        setInstallText('Preparando la instalación…');
+        await registerServiceWorker();
+        await waitForInstallPrompt();
+      }
+      if(!deferredPrompt){
+        setInstallText('Este navegador no habilitó la instalación automática. Abrí el menú de Chrome y elegí “Instalar aplicación” o “Agregar a pantalla de inicio”.');
+        toast('Chrome todavía no habilitó la instalación automática en este dispositivo.');
+        return;
+      }
+      const promptEvent=deferredPrompt;
       deferredPrompt=null;
+      promptEvent.prompt();
+      const choice=await promptEvent.userChoice;
       if(choice?.outcome==='accepted')toast('Instalación iniciada.');
       else toast('La instalación quedó pendiente.');
-    }catch(e){console.error('Install:',e);toast('No se pudo abrir la instalación. Usá el menú del navegador.');}
-    updateInstallUi();
+      updateInstallUi();
+    }catch(e){console.error('Install:',e);setInstallText('No se pudo abrir la instalación. Intentá nuevamente.');toast('No se pudo abrir la instalación ahora.');}
+    finally{installBusy=false}
   }
   function showWelcomeInstall(force){
     if(isStandalone())return;
@@ -489,31 +546,39 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
     if(!force&&sessionStorage.getItem('ilha_install_notice_seen')==='1')return;
     modal.classList.add('open');modal.setAttribute('aria-hidden','false');
   }
-  function closeWelcomeInstall(){const modal=document.querySelector('#installWelcome');if(!modal)return;modal.classList.remove('open');modal.setAttribute('aria-hidden','true');try{sessionStorage.setItem('ilha_install_notice_seen','1')}catch(_){} }
-  async function robustLogin(){
-    try{
-      const client=window.supabase?.createClient?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):supabase;
-      if(!client){toast('No se pudo cargar Google. Recargá la página e intentá nuevamente.');return}
-      const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:PROD_URL,queryParams:{prompt:'select_account'}}});
-      if(error)throw error;
-    }catch(e){console.error('Google login:',e);toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.');}
+  function closeWelcomeInstall(){
+    const modal=document.querySelector('#installWelcome');if(!modal)return;
+    modal.classList.remove('open');modal.setAttribute('aria-hidden','true');
+    try{sessionStorage.setItem('ilha_install_notice_seen','1')}catch(_){}
   }
-  document.addEventListener('click',function(e){
-    const login=e.target.closest('#profileLogin,#profileAuth,#authBtn');
-    if(login){e.preventDefault();if(login.id==='profileAuth'&&state.user){setView('profile');return}robustLogin();return;}
-    const install=e.target.closest('#profileInstallApp,#profileInstallAppLogged,#installWelcomeButton');
-    if(install){e.preventDefault();installApp();return;}
-    if(e.target.closest('#installWelcomeClose,#installWelcomeContinue')){e.preventDefault();closeWelcomeInstall();return;}
-    if(e.target.id==='installWelcome'){closeWelcomeInstall();return;}
-    const push=e.target.closest('#profileEnablePush');
-    if(push&&window.__ilhaEnablePush){e.preventDefault();window.__ilhaEnablePush();}
-  },true);
-  document.addEventListener('DOMContentLoaded',()=>{
+  function bindCriticalButtons(){
+    const profileLogin=document.querySelector('#profileLogin');
+    const profileAuth=document.querySelector('#profileAuth');
+    const authBtn=document.querySelector('#authBtn');
+    const guestInstall=document.querySelector('#profileInstallApp');
+    const loggedInstall=document.querySelector('#profileInstallAppLogged');
+    if(profileLogin)profileLogin.onclick=loginWithGoogle;
+    if(profileAuth)profileAuth.onclick=()=>state.user?setView('profile'):loginWithGoogle();
+    if(authBtn)authBtn.onclick=()=>state.user?setView('profile'):loginWithGoogle();
+    if(guestInstall)guestInstall.onclick=installApp;
+    if(loggedInstall)loggedInstall.onclick=installApp;
+    const welcomeButton=document.querySelector('#installWelcomeButton');
+    const welcomeClose=document.querySelector('#installWelcomeClose');
+    const welcomeContinue=document.querySelector('#installWelcomeContinue');
+    const welcomeModal=document.querySelector('#installWelcome');
+    if(welcomeButton)welcomeButton.onclick=installApp;
+    if(welcomeClose)welcomeClose.onclick=closeWelcomeInstall;
+    if(welcomeContinue)welcomeContinue.onclick=closeWelcomeInstall;
+    if(welcomeModal)welcomeModal.onclick=e=>{if(e.target===welcomeModal)closeWelcomeInstall()};
+  }
+  document.addEventListener('DOMContentLoaded',async()=>{
+    bindCriticalButtons();
+    await registerServiceWorker();
     updateInstallUi();
-    setTimeout(()=>showWelcomeInstall(false),500);
-    if(document.querySelector('#installWelcomeStatus')&&!deferredPrompt&&!isStandalone())document.querySelector('#installWelcomeStatus').textContent='Si no se abre automáticamente, podés instalarla desde el menú de Chrome.';
+    setTimeout(()=>showWelcomeInstall(false),450);
   });
   window.__ilhaInstallApp=installApp;
+  window.__ilhaCloseInstall=closeWelcomeInstall;
 })();
 </script>
 <script>
