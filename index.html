@@ -430,20 +430,9 @@ function openProposal(){if(!state.user){toast('Iniciá sesión para proponer un 
 function closeProposal(){['proposalName','proposalDescription','proposalMaps'].forEach(id=>{const e=$('#'+id);if(e)e.value=''});$('#proposalZone').value='';$('#proposalBackdrop').classList.remove('open');$('#proposalBackdrop').setAttribute('aria-hidden','true')}
 async function submitProposal(){if(!state.user){toast('Iniciá sesión para proponer un lugar.');return}const name=$('#proposalName').value.trim(),description=$('#proposalDescription').value.trim(),mapsUrl=$('#proposalMaps').value.trim(),zoneId=$('#proposalZone').value||null;if(!name){toast('Indicá el nombre del lugar.');return}const btn=$('#proposalSend');btn.disabled=true;try{const {error}=await supabase.from('place_proposals').insert({proposed_by:state.user.id,name,description:description||null,zone_id:zoneId,status:'review'});if(error)throw error;toast('Propuesta enviada a revisión.');closeProposal()}catch(e){console.error(e);toast('No se pudo enviar la propuesta.')}finally{btn.disabled=false}}
 $('#communityRefresh').onclick=()=>{state.community.loaded=true;loadCommunity().catch(e=>{console.error(e);toast('No pudimos actualizar Comunidad.')})};$('#communityPublish').onclick=publishCommunityPost;$('#communityRelationType').onchange=updateCommunityRelationOptions;$('#communityPropose').onclick=openProposal;$('#proposalClose').onclick=closeProposal;$('#proposalCancel').onclick=closeProposal;$('#proposalSend').onclick=submitProposal;$('#proposalBackdrop').onclick=e=>{if(e.target.id==='proposalBackdrop')closeProposal()};
-let googleLoginBusy=false;
 async function loginWithGoogle(){
-  if(googleLoginBusy)return;
-  googleLoginBusy=true;
-  try{
-    const client=supabase||(window.supabase?.createClient?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null);
-    if(!client){toast('No se pudo cargar el inicio de sesión. Recargá la página e intentá nuevamente.');return}
-    const redirectTo=new URL('/',window.location.origin).toString();
-    const {data,error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo,queryParams:{prompt:'select_account'},skipBrowserRedirect:true}});
-    if(error)throw error;
-    if(data?.url)window.location.assign(data.url);
-    else throw new Error('Google no devolvió la URL de inicio de sesión.');
-  }catch(e){console.error('Google login:',e);toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.');}
-  finally{googleLoginBusy=false}
+  if(typeof window.__ilhaLoginGoogle==='function')return window.__ilhaLoginGoogle();
+  if(typeof toast==='function')toast('El inicio de sesión todavía no está disponible. Recargá la página e intentá nuevamente.');
 }
 function renderProfileGuest(){if($('#profileGuest'))$('#profileGuest').hidden=!!state.user;if($('#profileContent'))$('#profileContent').hidden=!state.user;if($('#profileAuth'))$('#profileAuth').textContent=state.user?'Cuenta':'Iniciar sesión'}
 function profileEmpty(title,text){return `<div class="empty"><strong>${esc(title)}</strong><span>${esc(text)}</span></div>`}
@@ -587,14 +576,17 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
     try{
       const client=(typeof supabase!=='undefined'&&supabase)?supabase:null;
       if(!client)throw new Error('Supabase todavía no está disponible.');
-      const {error}=await client.auth.signInWithOAuth({
+      const {data,error}=await client.auth.signInWithOAuth({
         provider:'google',
         options:{
           redirectTo:PROD_URL,
-          queryParams:{prompt:'select_account'}
+          queryParams:{prompt:'select_account'},
+          skipBrowserRedirect:true
         }
       });
       if(error)throw error;
+      if(data?.url){window.location.assign(data.url);return;}
+      throw new Error('Google no devolvió la URL de inicio de sesión.');
     }catch(e){
       console.error('Google login:',e);
       if(typeof toast==='function')toast(e?.message?'Google: '+e.message:'No se pudo iniciar sesión con Google.');
@@ -633,6 +625,8 @@ if(supabase){supabase.auth.onAuthStateChange((_event,session)=>{state.user=sessi
     if(welcomeClose)welcomeClose.onclick=function(e){e.preventDefault();closeWelcomeInstall();};
     if(welcomeContinue)welcomeContinue.onclick=function(e){e.preventDefault();closeWelcomeInstall();};
     if(welcomeModal)welcomeModal.onclick=function(e){if(e.target===welcomeModal)closeWelcomeInstall();};
+    const pushButton=document.querySelector('#profileEnablePush');
+    if(pushButton)pushButton.onclick=function(e){e.preventDefault();if(typeof window.__ilhaEnablePush==='function')window.__ilhaEnablePush();else if(typeof toast==='function')toast('Las notificaciones todavía no están disponibles. Recargá la página e intentá nuevamente.');};
   }
 
   function syncEntryGate(){
