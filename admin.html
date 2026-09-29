@@ -313,7 +313,27 @@ const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>el.classList.remove('show'),2800)}
 function showSection(name){if(!adminUser)return;document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===name));document.querySelectorAll('[data-section]').forEach(x=>x.classList.toggle('active',x.dataset.section===name));scrollTo(0,0)}
 function setLoginState(ok,message){$('#loginView').classList.toggle('hidden',ok);$('#app').classList.toggle('hidden',!ok);$('#bottomNav').classList.toggle('hidden',!ok);$('#logoutBtn').classList.toggle('hidden',!ok);$('#loginStatus').textContent=message||''}
-async function login(){if(!db){toast('La conexión de Supabase no está disponible.');return}const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;if(!email||!password){toast('Completá email y contraseña.');return}$('#loginBtn').disabled=true;$('#loginStatus').textContent='Ingresando…';const {error}=await db.auth.signInWithPassword({email,password});$('#loginBtn').disabled=false;if(error){console.error(error);$('#loginStatus').textContent='No se pudo iniciar sesión con esas credenciales.';toast('Email o contraseña incorrectos, o cuenta no disponible.');return}$('#loginStatus').textContent='Verificando autorización administrativa…'}
+async function login(){
+  if(!db){toast('La conexión de Supabase no está disponible.');return}
+  const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;
+  if(!email||!password){toast('Completá email y contraseña.');return}
+  const btn=$('#loginBtn');
+  btn.disabled=true;
+  $('#loginStatus').textContent='Ingresando…';
+  try{
+    const {data,error}=await db.auth.signInWithPassword({email,password});
+    if(error)throw error;
+    if(!data?.session?.user)throw new Error('Supabase no devolvió una sesión válida.');
+    $('#loginStatus').textContent='Verificando autorización administrativa…';
+    await handleSession(data.session);
+  }catch(e){
+    console.error('Admin login:',e);
+    $('#loginStatus').textContent='No se pudo iniciar sesión con esas credenciales.';
+    toast(e?.message==='Invalid login credentials'?'Email o contraseña incorrectos.':'No se pudo iniciar sesión. Revisá las credenciales y la conexión.');
+  }finally{
+    btn.disabled=false;
+  }
+}
 async function logout(){if(db)await db.auth.signOut();adminUser=null;session=null;setLoginState(false,'Sesión cerrada. Ingresá nuevamente para continuar.')}
 async function verifyAdmin(user){if(!db||!user)return false;const {data,error}=await db.from('admin_users').select('user_id,active').eq('user_id',user.id).eq('active',true).maybeSingle();if(error){console.error(error);toast('No se pudo verificar el acceso administrativo.');return false}return !!data}
 async function countTable(table,filter){let q=db.from(table).select('id',{count:'exact',head:true});if(filter)q=filter(q);const r=await q;return {count:r.count||0,error:r.error};}
@@ -455,7 +475,27 @@ async function start(){
   await handleSession(session);
   db.auth.onAuthStateChange((_event,newSession)=>{setTimeout(()=>handleSession(newSession),0)});
 }
-async function handleSession(s){session=s;if(!s?.user){setLoginState(false,'Necesitás una cuenta autorizada de administrador.');return}const ok=await verifyAdmin(s.user);if(!ok){setLoginState(false,'Esta cuenta no tiene permisos de administrador.');toast('Acceso administrativo no autorizado.');return}adminUser=s.user;if(!modulesInitialized){initPlacesModule();initContentModule();initCommercialModule();initCommunityModule();initUsersModule();initSettingsModule();modulesInitialized=true}await loadPlaceCatalog();await loadPlacesAdmin();await loadCommercialCatalog();await loadCommercialSpaces();$('#userName').textContent=s.user.user_metadata?.full_name||s.user.email||'Administrador';$('#userAvatar').src=s.user.user_metadata?.avatar_url||'';$('#userChip').style.display='flex';setLoginState(true,'');await loadMetrics()}
+async function handleSession(s){
+  session=s;
+  if(!s?.user){adminUser=null;setLoginState(false,'Necesitás una cuenta autorizada de administrador.');return}
+  if(adminUser?.id===s.user.id && adminUser?.id===session?.user?.id){setLoginState(true,'');return}
+  const ok=await verifyAdmin(s.user);
+  if(!ok){adminUser=null;setLoginState(false,'Esta cuenta no tiene permisos de administrador.');toast('Acceso administrativo no autorizado.');return}
+  adminUser=s.user;
+  if(!modulesInitialized){
+    initPlacesModule();initContentModule();initCommercialModule();initCommunityModule();initUsersModule();initSettingsModule();
+    modulesInitialized=true;
+  }
+  await loadPlaceCatalog();
+  await loadPlacesAdmin();
+  await loadCommercialCatalog();
+  await loadCommercialSpaces();
+  $('#userName').textContent=s.user.user_metadata?.full_name||s.user.email||'Administrador';
+  $('#userAvatar').src=s.user.user_metadata?.avatar_url||'';
+  $('#userChip').style.display='flex';
+  setLoginState(true,'');
+  await loadMetrics();
+}
 $('#loginBtn').onclick=login;$('#adminPassword').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('#logoutBtn').onclick=logout;$('#refreshDashboard').onclick=()=>loadMetrics().then(()=>toast('Dashboard actualizado.')).catch(()=>toast('No se pudieron actualizar todas las métricas.'));
 document.addEventListener('click',e=>{const b=e.target.closest('[data-section]');if(b){e.preventDefault();showSection(b.dataset.section)}});
 function initPlacesModule(){ $('#newPlaceBtn').onclick=resetPlaceForm; $('#cancelPlace').onclick=()=>$('#placeEditor').classList.add('hidden'); $('#placeSearch').oninput=renderPlaces; $('#placeStatus').onchange=renderPlaces; $('#refreshPlaces').onclick=loadPlacesAdmin; $('#placeCategory').onchange=updatePlaceSubcategories; $('#placeForm').onsubmit=e=>{e.preventDefault();savePlace(false)}; $('#savePublishPlace').onclick=()=>savePlace(true); document.addEventListener('click',e=>{const edit=e.target.closest('[data-edit-place]');if(edit)editPlace(edit.dataset.editPlace);const pub=e.target.closest('[data-publish-place]');if(pub)changePlaceStatus(pub.dataset.publishPlace,'published');const pause=e.target.closest('[data-pause-place]');if(pause)changePlaceStatus(pause.dataset.pausePlace,'paused')}) }
